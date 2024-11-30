@@ -1,7 +1,120 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
-import 'database_helper.dart';
+class CameraApp extends StatefulWidget {
+  @override
+  _CameraAppState createState() => _CameraAppState();
+}
+
+class _CameraAppState extends State<CameraApp> {
+  File? _image;
+  final ImagePicker _picker = ImagePicker();
+  String? _imageDate;
+  String? _nativeString;
+
+  static const androidChannel = MethodChannel('ua.edu.lntu/native_demo_app');
+
+  Future<void> _getNativeString() async {
+    try {
+      final String result = await androidChannel.invokeMethod('getStaticString');
+      setState(() {
+        _nativeString = result;
+      });
+    } on PlatformException catch (e) {
+      setState(() {
+        _nativeString = "Failed to get native string: '${e.message}'";
+      });
+    }
+  }
+
+  Future<void> _takePicture() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+    setState(() {
+      if (pickedFile != null) {
+        _image = File(pickedFile.path);
+        _imageDate = DateFormat('yyyy-MM-dd – kk:mm').format(
+          File(pickedFile.path).lastModifiedSync(),
+        );
+      }
+    });
+  }
+
+  void _showDateDialog() {
+    _getNativeString();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          contentPadding: EdgeInsets.all(20),
+          content: Text(
+            _nativeString != null ? _nativeString! : 'No native string',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('lab14'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: Stack(
+        children: [
+          Center(
+            child: _image == null
+                ? Text('No image')
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.file(
+                        _image!,
+                        height: 500,
+                        width: 500,
+                        fit: BoxFit.contain,
+                      ),
+                      SizedBox(height: 20),
+                    ],
+                  ),
+          ),
+          Positioned(
+            top: 20,
+            left: 0,
+            right: 0,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: OutlinedButton(
+                onPressed: _showDateDialog,
+                child: Text('Show Native String'),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: FloatingActionButton(
+              onPressed: _takePicture,
+              tooltip: 'Take Picture',
+              child: Icon(Icons.camera),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 void main() {
   runApp(const MyApp());
@@ -13,119 +126,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const NotesScreen(),
-    );
-  }
-}
-
-class NotesScreen extends StatefulWidget {
-  const NotesScreen({super.key});
-
-  @override
-  State<NotesScreen> createState() => _NotesScreenState();
-}
-
-class _NotesScreenState extends State<NotesScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  List<Map<String, dynamic>> _notes = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotes();
-  }
-
-  Future<void> _loadNotes() async {
-    final notes = await DatabaseHelper.instance.getNotes();
-    setState(() {
-      _notes = notes;
-    });
-  }
-
-  Future<void> _addNote() async {
-    if (_formKey.currentState!.validate()) {
-      await DatabaseHelper.instance.addNote(_controller.text);
-      _controller.clear();
-      _loadNotes();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Flutter Notes App'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.only(left: 8, top: 8, bottom: 8, right: 8),
-        child: Column(
-          children: [
-            Form(
-              key: _formKey,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _controller,
-                      decoration: const InputDecoration(
-                        labelText: 'Enter a note',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Value is required';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  ElevatedButton(
-                    onPressed: _addNote,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Add'),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(
-              height: 20,
-              thickness: 0.5,
-              indent: 0,
-              endIndent: 0,
-              color: Colors.grey,
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _notes.length,
-                itemBuilder: (context, index) {
-                  final note = _notes[index];
-                  return Card(
-                    child: ListTile(
-                      title: Text(note['text']),
-                      subtitle: Text(
-                        DateFormat('dd-MM-yyyy HH:mm:ss')
-                            .format(DateTime.parse(note['createdAt'])),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+      home: CameraApp(),
     );
   }
 }
